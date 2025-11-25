@@ -7,7 +7,7 @@ include = ["terratorch*"]
 
 [project]
 name = "terratorch"
-version = "v1.1"
+version = "v1.1.1"
 description = "TerraTorch - The geospatial foundation model fine-tuning toolkit"
 license = { "text" = "Apache License, Version 2.0" }
 readme = "README.md"
@@ -64,6 +64,7 @@ dependencies = [
   "tqdm",
   "wandb",
   "tensorboard",
+  "diffusers<=0.34.0",
 ]
 
 
@@ -98,7 +99,8 @@ test = [
 surya = [
   "numba",
   "hdf5plugin",
-  "h5netcdf"
+  "h5netcdf",
+  "terratorch-surya==0.1.0"
 ]
 
 mmseg = [

@@ -42,9 +42,9 @@ User responsibility: It is the sole responsibility of the user to verify that th
 The TerraTorch maintainers do not provide legal advice and are not liable for any misuse of third-party models.
 
 <hr>
-<a href="https://www.youtube.com/watch?v=CB3FKtmuPI8">
+<a href="https://youtu.be/LNKovSef5lU">
   <img src="https://upload.wikimedia.org/wikipedia/commons/4/42/YouTube_icon_%282013-2017%29.png" alt="YouTube" width="20">
-  Watch the latest recording on YouTube: Earth observation foundation models with Prithvi-EO-2.0 and TerraTorch
+  Video: Introduction to TerraTorch
   <img src="https://upload.wikimedia.org/wikipedia/commons/4/42/YouTube_icon_%282013-2017%29.png" alt="YouTube" width="20">
 </a>
 <hr>
@@ -104,8 +104,24 @@ pip install -r requirements_test.txt
 conda install -c conda-forge gdal
 pip install -e .
 ```
-
 To install terratorch with partial (work in development) support for Weather Foundation Models, `pip install -e .[wxc]`, which currently works just for `Python >= 3.11`. 
+
+### Podman
+To run the tests inside a container environment, proceed in the following way:
+
+* Install `podman` in your system.
+* Building the base images:
+```
+./run_base_images_build.sh 
+```
+* Building the pytest images:
+```
+./run_pytest_images_build.sh
+```
+* Running the tests inside each environment:
+```
+./run_tests_container.sh 
+```
 
 ## Documentation
 
