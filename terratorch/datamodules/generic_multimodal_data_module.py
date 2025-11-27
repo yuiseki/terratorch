@@ -204,7 +204,7 @@ class GenericMultiModalDataModule(NonGeoDataModule):
         predict_output_bands: dict[str, list] | None = None,
         image_modalities: list[str] | None = None,
         rgb_modality: str | None = None,
-        rgb_indices: list[int] | None = None,
+        rgb_indices: list[int] | dict[str, list[int]] | None = None,
         allow_substring_file_names: bool = True,
         class_names: list[str] | None = None,
         constant_scale: dict[str, float] = None,
@@ -287,8 +287,9 @@ class GenericMultiModalDataModule(NonGeoDataModule):
             image_modalities(list[str], optional): List of pixel-level raster modalities. Defaults to data_root.keys().
                 The difference between all modalities and image_modalities are non-image modalities which are treated
                 differently during the transforms and are not modified but only converted into a tensor if possible.
-            rgb_modality (str, optional): Modality used for RGB plots. Defaults to first modality in data_root.keys().
-            rgb_indices (list[int] | None, optional): _description_. Defaults to None.
+            rgb_modality (str, optional): rgb_modality is deprecated, provide modalities as keys in rgb_indices.
+            rgb_indices (list[int] | dict[str, list[int]], optional): Indices of RGB channels for plotting. Provide the
+                indices as a dict with the modalities as keys and three int indices as values. Defaults to None.
             allow_substring_file_names (bool, optional): Allow substrings during sample identification by adding
                 image or label grep to the sample prefixes. If False, treats sample prefixes as full file names.
                 If True and no split file is provided, considers the file stem as prefix, otherwise the full file name.
@@ -459,7 +460,25 @@ class GenericMultiModalDataModule(NonGeoDataModule):
         self.predict_dataset_bands = predict_dataset_bands or dataset_bands
         self.predict_output_bands = predict_output_bands or output_bands
 
-        self.rgb_modality = rgb_modality or modalities[0]
+        # TODO: Remove in future release
+        if rgb_modality is not None:
+            warnings.warn("rgb_modality is deprecated and will be removed in a future release. Provide the modalities "
+                          "for plotting as keys in `rgb_indices` with the format {'<modality>': [<band indices>]}.")
+            if isinstance(rgb_indices, list):
+                # Backwards compatibility
+                rgb_indices = {rgb_modality: rgb_indices}
+        elif isinstance(rgb_indices, list):
+            # Backwards compatibility
+            warnings.warn("`rgb_indices` was updated and expects now the format {'<modality>': [<band indices>]}. "
+                          "Assuming first modality for backwards compatibility.")
+            rgb_indices = {modalities[0]: rgb_indices}
+
+        for mod, indices in rgb_indices.items():
+            # Check for RGB bands
+            if len(indices) not in [1, 3]:
+                raise ValueError(f"`rgb_indices` must have 1 or 3 elements, got {len(indices)} elements for "
+                                 f"{{'{mod}' : {indices}}}.")
+
         self.rgb_indices = rgb_indices
         self.expand_temporal_dimension = expand_temporal_dimension
         self.reduce_zero_label = reduce_zero_label
@@ -534,7 +553,6 @@ class GenericMultiModalDataModule(NonGeoDataModule):
                 output_bands=self.output_bands,
                 constant_scale=self.constant_scale,
                 image_modalities=self.image_modalities,
-                rgb_modality=self.rgb_modality,
                 rgb_indices=self.rgb_indices,
                 transform=self.train_transform,
                 no_data_replace=self.no_data_replace,
@@ -560,7 +578,6 @@ class GenericMultiModalDataModule(NonGeoDataModule):
                 output_bands=self.output_bands,
                 constant_scale=self.constant_scale,
                 image_modalities=self.image_modalities,
-                rgb_modality=self.rgb_modality,
                 rgb_indices=self.rgb_indices,
                 transform=self.val_transform,
                 no_data_replace=self.no_data_replace,
@@ -586,7 +603,6 @@ class GenericMultiModalDataModule(NonGeoDataModule):
                 output_bands=self.output_bands,
                 constant_scale=self.constant_scale,
                 image_modalities=self.image_modalities,
-                rgb_modality=self.rgb_modality,
                 rgb_indices=self.rgb_indices,
                 transform=self.test_transform,
                 no_data_replace=self.no_data_replace,
@@ -611,7 +627,6 @@ class GenericMultiModalDataModule(NonGeoDataModule):
                 output_bands=self.predict_output_bands,
                 constant_scale=self.constant_scale,
                 image_modalities=self.image_modalities,
-                rgb_modality=self.rgb_modality,
                 rgb_indices=self.rgb_indices,
                 transform=self.test_transform,
                 no_data_replace=self.no_data_replace,

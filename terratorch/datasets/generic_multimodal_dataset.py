@@ -24,6 +24,7 @@ from einops import rearrange
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
+from matplotlib.colors import ListedColormap
 from torchgeo.datasets import NonGeoDataset
 
 from terratorch.datasets.utils import HLSBands, default_transform, filter_valid_files, generate_bands_intervals
@@ -57,8 +58,7 @@ class GenericMultimodalDataset(NonGeoDataset, ABC):
         label_grep: str | None = "*",
         split: Path | None = None,
         image_modalities: list[str] | None = None,
-        rgb_modality: str | None = None,
-        rgb_indices: list[int] | None = None,
+        rgb_indices: dict[str, list[int]] | None = None,
         allow_missing_modalities: bool = False,
         allow_substring_file_names: bool = True,
         dataset_bands: dict[str, list] | None = None,
@@ -95,8 +95,8 @@ class GenericMultimodalDataset(NonGeoDataset, ABC):
             image_modalities(list[str], optional): List of pixel-level raster modalities. Defaults to data_root.keys().
                 The difference between all modalities and image_modalities are non-image modalities which are treated
                 differently during the transforms and are not modified but only converted into a tensor if possible.
-            rgb_modality (str, optional): Modality used for RGB plots. Defaults to first modality in data_root.keys().
-            rgb_indices (list[str], optional): Indices of RGB channels. Defaults to [0, 1, 2].
+            rgb_indices (dict[str, list[int]], optional): Indices of RGB channels for plotting with the format
+                {<modality>: [<band indices>]}. Defaults to {image_modalities[0]: [0, 1, 2]} if not provided.
             allow_missing_modalities (bool, optional): Allow missing modalities during data loading. Defaults to False.
             allow_substring_file_names (bool, optional): Allow substrings during sample identification by adding
                 image or label grep to the sample prefixes. If False, treats sample prefixes as full file names.
@@ -290,8 +290,7 @@ class GenericMultimodalDataset(NonGeoDataset, ABC):
                              f"Candidate prefixes: {', '.join([valid_files[i] for i in idx])}\n"
                              f"Sample candidate paths: {', '.join([failed_candidates[i] for i in idx])}")
 
-        self.rgb_modality = rgb_modality or self.modalities[0]
-        self.rgb_indices = rgb_indices or [0, 1, 2]
+        self.rgb_indices = rgb_indices or {image_modalities[0]: [0, 1, 2]}
 
         if dataset_bands is not None:
             self.dataset_bands = {m: generate_bands_intervals(m_bands) for m, m_bands in dataset_bands.items()}
@@ -433,66 +432,128 @@ class GenericMultimodalDataset(NonGeoDataset, ABC):
 
         Returns:
             a matplotlib Figure with the rendered sample
-
-        .. versionadded:: 0.2
         """
-        image = sample["image"]
-        if isinstance(image, dict):
-            image = image[self.rgb_modality]
-        if isinstance(image, torch.Tensor):
-            image = image.numpy()
-        image = image.take(self.rgb_indices, axis=0)
-        image = np.transpose(image, (1, 2, 0))
-        image = (image - image.min(axis=(0, 1))) * (1 / image.max(axis=(0, 1)))
-        image = np.clip(image, 0, 1)
+        suptitle = suptitle or sample.get("filename", "").split("/")[-1].split(".")[0]
+        images = {}
+        for mod, indices in self.rgb_indices.items():
+            if "image" in sample and isinstance(sample["image"], dict) and mod in sample["image"]:
+                # Move modality to sample dict
+                images[mod] = sample["image"][mod]
+            if mod in sample.keys():
+                image = sample[mod][indices]
+                # Per modality processing
+                if isinstance(image, torch.Tensor):
+                    image = image.numpy()
+                # Normalize to 0 - 1
+                image = image - image.min(axis=(-1, -2), keepdims=True)
+                image = image / np.quantile(image, q=0.99, axis=(-1, -2), keepdims=True)
+                image = np.clip(image, 0, 1)
+                # Channel last
+                image = np.moveaxis(image, 0, -1)
+                if image.ndim == 4:
+                    warnings.warn(f"Found time series data. Plotting only supports images, selecting the first one.")
+                    image = image[0]
+                images[mod] = image
+
+        if len(images) == 0:
+            warnings.warn(f"No RGB modalities found ({suptitle}). Sample keys: {list(sample.keys())}, "
+                          f"Dataset rgb_indices modalities: {list(self.rgb_indices.keys())}")
+            raise ValueError("No RGB images found.")
 
         if "mask" in sample:
             mask = sample["mask"]
             if isinstance(mask, torch.Tensor):
                 mask = mask.numpy()
-            if mask.ndim == 2:
-                mask = np.expand_dims(mask, axis=-1)
-            # Convert masked regions to 0.
-            mask = mask * -1 + 1
         else:
             mask = None
 
         if "prediction" in sample:
-            prediction = sample["prediction"]
-            if isinstance(image, dict):
-                prediction = prediction[self.rgb_modality]
+            prediction = sample["mask"]
+            if isinstance(prediction, dict):
+                raise ValueError("Multiple outputs not yet supported")
             if isinstance(prediction, torch.Tensor):
                 prediction = prediction.numpy()
-            # Assuming reconstructed image
-            prediction = prediction.take(self.rgb_indices, axis=0)
-            prediction = np.transpose(prediction, (1, 2, 0))
-            prediction = (prediction - image.min(axis=(0, 1))) * (1 / image.max(axis=(0, 1)))
-            prediction = np.clip(prediction, 0, 1)
+            while prediction.ndim < 2:
+                prediction = np.expand_dims(prediction, -1)
         else:
             prediction = None
 
-        return self._plot_sample(
-            image,
-            mask=mask,
-            prediction=prediction,
-            suptitle=suptitle,
-        )
+        # Scalar label
+        if "label" in sample:
+            label = sample["label"]
+            if isinstance(label, torch.Tensor):
+                label = label.numpy()
+            while label.ndim < 2:
+                label = np.expand_dims(label, -1)
+        else:
+            label = None
 
-    @staticmethod
-    def _plot_sample(image, mask=None, prediction=None, suptitle=None):
-        num_images = 1 + int(mask is not None) + int(prediction is not None)
-        fig, ax = plt.subplots(1, num_images, figsize=(5*num_images, 5), layout="compressed")
+        if hasattr(self, "num_classes"):
+            # Classification, Segmentation
+            vmin, vmax = 0, self.num_classes - 1
+            cmap = plt.get_cmap("rainbow")
+            cmap = ListedColormap(cmap(np.linspace(0.10, 1.0, self.num_classes)))  # Start with blue
+            class_names = self.class_names or list(range(0, self.num_classes))
+            handles = [Rectangle((0, 0), 1, 1, color=cmap(i))
+                       for i in range(self.num_classes)]
 
-        ax[0].axis("off")
-        ax[0].imshow(image)
+            if self.no_label_replace is not None:
+                if mask is not None:
+                    mask[mask == self.no_label_replace] = -1
+                elif label is not None:
+                    label[label == self.no_label_replace] = -1
+                vmin = -1
+                cmap = cmap(np.arange(self.num_classes))
+                cmap = ListedColormap(np.vstack(([0, 0, 0, 1], cmap)), N=len(cmap) + 1)
+                class_names = ["No label"] + class_names
+                handles = [Rectangle((0, 0), 1, 1, color=(0, 0, 0, 1))] + handles
+        else:
+            # Regression
+            vmax = np.max([mask.max() if mask is not None else 0,
+                           prediction.max() if prediction is not None else 0,
+                           label.max() if label is not None else 0])
+            vmin = np.min([mask.min() if mask is not None else 0,
+                           prediction.min() if prediction is not None else 0,
+                           label.min() if label is not None else 0])
+            cmap = "viridis"
+            class_names = handles = None
 
+        # Plot images
+        num_images = len(images) + int(mask is not None or label is not None) + int(prediction is not None)
+        fig, ax = plt.subplots(1, num_images, figsize=(5*num_images, 5))
+
+        for i, (mod, image) in enumerate(images.items()):
+            ax[i].imshow(image)
+            ax[i].axis("off")
+            ax[i].set_title(mod)
+
+        image = list(images.values())[0]  # First RGB modality as base image for mask
+
+        mask_i = -1 if prediction is None else -2
         if mask is not None:
-            ax[1].axis("off")
-            ax[1].imshow(image * mask)
+            ax[mask_i].imshow(image)
+            ax[mask_i].imshow(mask, alpha=0.7, vmin=vmin, vmax=vmax, cmap=cmap, interpolation="nearest")
+            ax[mask_i].axis("off")
+            ax[mask_i].set_title("GT Mask")
+
+            if class_names is not None:
+                # Segmentation task
+                ax[-1].legend(handles, class_names, loc="upper left", bbox_to_anchor=(1, 1))
 
         if prediction is not None:
-            ax[num_images-1].axis("off")
-            ax[num_images-1].imshow(prediction)
+            ax[-1].imshow(image)
+            ax[-1].imshow(prediction, alpha=0.7, vmin=vmin, vmax=vmax, cmap=cmap, interpolation="nearest")
+            ax[-1].axis("off")
+            ax[-1].set_title("Prediction")
+
+        if label is not None:
+            # Plot scalar values
+            ax[mask_i].imshow(image)
+            ax[mask_i].imshow(label, alpha=0.7, vmin=vmin, vmax=vmax, cmap=cmap, interpolation="nearest")
+            ax[mask_i].axis("off")
+            ax[mask_i].set_title(f"GT Label:\n{label[:, 0]}")
+            if prediction is not None:
+                ax[-1].set_title(f"Prediction:\n{prediction[:, 0]}")
 
         if suptitle is not None:
             plt.suptitle(suptitle)
@@ -511,7 +572,6 @@ class GenericMultimodalSegmentationDataset(GenericMultimodalDataset):
         label_grep: str | None = "*",
         split: Path | None = None,
         image_modalities: list[str] | None = None,
-        rgb_modality: str | None = None,
         rgb_indices: list[str] | None = None,
         allow_missing_modalities: bool = False,
         allow_substring_file_names: bool = False,
@@ -548,8 +608,8 @@ class GenericMultimodalSegmentationDataset(GenericMultimodalDataset):
             image_modalities(list[str], optional): List of pixel-level raster modalities. Defaults to data_root.keys().
                 The difference between all modalities and image_modalities are non-image modalities which are treated
                 differently during the transforms and are not modified but only converted into a tensor if possible.
-            rgb_modality (str, optional): Modality used for RGB plots. Defaults to first modality in data_root.keys().
-            rgb_indices (list[str], optional): Indices of RGB channels. Defaults to [0, 1, 2].
+            rgb_indices (dict[str, list[int]], optional): Indices of RGB channels for plotting with the format
+                {<modality>: [<band indices>]}. Defaults to {image_modalities[0]: [0, 1, 2]} if not provided.
             allow_missing_modalities (bool, optional): Allow missing modalities during data loading. Defaults to False.
             allow_substring_file_names (bool, optional): Allow substrings during sample identification by adding
                 image or label grep to the sample prefixes. If False, treats sample prefixes as full file names.
@@ -593,7 +653,6 @@ class GenericMultimodalSegmentationDataset(GenericMultimodalDataset):
             label_grep=label_grep,
             split=split,
             image_modalities=image_modalities,
-            rgb_modality=rgb_modality,
             rgb_indices=rgb_indices,
             allow_missing_modalities=allow_missing_modalities,
             allow_substring_file_names=allow_substring_file_names,
@@ -621,92 +680,6 @@ class GenericMultimodalSegmentationDataset(GenericMultimodalDataset):
 
         return item
 
-    def plot(
-        self, sample: dict[str, torch.Tensor], suptitle: str | None = None, show_axes: bool | None = False
-    ) -> Figure:
-        """Plot a sample from the dataset.
-
-        Args:
-            sample: a sample returned by :meth:`__getitem__`
-            suptitle: optional string to use as a suptitle
-            show_axes: whether to show axes or not
-
-        Returns:
-            a matplotlib Figure with the rendered sample
-
-        .. versionadded:: 0.2
-        """
-        image = sample["image"]
-        if isinstance(image, dict):
-            image = image[self.rgb_modality]
-        if isinstance(image, torch.Tensor):
-            image = image.numpy()
-        image = image.take(self.rgb_indices, axis=0)
-        image = np.transpose(image, (1, 2, 0))
-        image = (image - image.min(axis=(0, 1))) * (1 / image.max(axis=(0, 1)))
-        image = np.clip(image, 0, 1)
-
-        label_mask = sample["mask"]
-        if isinstance(label_mask, torch.Tensor):
-            label_mask = label_mask.numpy()
-
-        showing_predictions = "prediction" in sample
-        if showing_predictions:
-            prediction_mask = sample["prediction"]
-            if isinstance(prediction_mask, torch.Tensor):
-                prediction_mask = prediction_mask.numpy()
-
-        return self._plot_sample(
-            image,
-            label_mask,
-            self.num_classes,
-            prediction=prediction_mask if showing_predictions else None,
-            suptitle=suptitle,
-            class_names=self.class_names,
-            show_axes=show_axes,
-        )
-
-    @staticmethod
-    def _plot_sample(image, label, num_classes, prediction=None, suptitle=None, class_names=None, show_axes=False):
-        num_images = 5 if prediction is not None else 4
-        fig, ax = plt.subplots(1, num_images, figsize=(12, 10), layout="compressed")
-        axes_visibility = "on" if show_axes else "off"
-
-        # for legend
-        ax[0].axis("off")
-
-        norm = mpl.colors.Normalize(vmin=0, vmax=num_classes - 1)
-        ax[1].axis(axes_visibility)
-        ax[1].title.set_text("Image")
-        ax[1].imshow(image)
-
-        ax[2].axis(axes_visibility)
-        ax[2].title.set_text("Ground Truth Mask")
-        ax[2].imshow(label, cmap="jet", norm=norm)
-
-        ax[3].axis(axes_visibility)
-        ax[3].title.set_text("GT Mask on Image")
-        ax[3].imshow(image)
-        ax[3].imshow(label, cmap="jet", alpha=0.3, norm=norm)
-
-        if prediction is not None:
-            ax[4].axis(axes_visibility)
-            ax[4].title.set_text("Predicted Mask")
-            ax[4].imshow(prediction, cmap="jet", norm=norm)
-
-        cmap = plt.get_cmap("jet")
-        legend_data = []
-        for i, _ in enumerate(range(num_classes)):
-            class_name = class_names[i] if class_names else str(i)
-            data = [i, cmap(norm(i)), class_name]
-            legend_data.append(data)
-        handles = [Rectangle((0, 0), 1, 1, color=tuple(v for v in c)) for k, c, n in legend_data]
-        labels = [n for k, c, n in legend_data]
-        ax[0].legend(handles, labels, loc="center")
-        if suptitle is not None:
-            plt.suptitle(suptitle)
-        return fig
-
 
 class GenericMultimodalPixelwiseRegressionDataset(GenericMultimodalDataset):
     """GenericNonGeoPixelwiseRegressionDataset"""
@@ -719,7 +692,6 @@ class GenericMultimodalPixelwiseRegressionDataset(GenericMultimodalDataset):
         label_grep: str | None = "*",
         split: Path | None = None,
         image_modalities: list[str] | None = None,
-        rgb_modality: str | None = None,
         rgb_indices: list[int] | None = None,
         allow_missing_modalities: bool = False,
         allow_substring_file_names: bool = False,
@@ -754,8 +726,8 @@ class GenericMultimodalPixelwiseRegressionDataset(GenericMultimodalDataset):
             image_modalities(list[str], optional): List of pixel-level raster modalities. Defaults to data_root.keys().
                 The difference between all modalities and image_modalities are non-image modalities which are treated
                 differently during the transforms and are not modified but only converted into a tensor if possible.
-            rgb_modality (str, optional): Modality used for RGB plots. Defaults to first modality in data_root.keys().
-            rgb_indices (list[str], optional): Indices of RGB channels. Defaults to [0, 1, 2].
+            rgb_indices (dict[str, list[int]], optional): Indices of RGB channels for plotting with the format
+                {<modality>: [<band indices>]}. Defaults to {image_modalities[0]: [0, 1, 2]} if not provided.
             allow_missing_modalities (bool, optional): Allow missing modalities during data loading. Defaults to False.
             allow_substring_file_names (bool, optional): Allow substrings during sample identification by adding
                 image or label grep to the sample prefixes. If False, treats sample prefixes as full file names.
@@ -796,7 +768,6 @@ class GenericMultimodalPixelwiseRegressionDataset(GenericMultimodalDataset):
             label_grep=label_grep,
             split=split,
             image_modalities=image_modalities,
-            rgb_modality=rgb_modality,
             rgb_indices=rgb_indices,
             allow_missing_modalities=allow_missing_modalities,
             allow_substring_file_names=allow_substring_file_names,
@@ -822,80 +793,6 @@ class GenericMultimodalPixelwiseRegressionDataset(GenericMultimodalDataset):
 
         return item
 
-    def plot(
-        self, sample: dict[str, torch.Tensor], suptitle: str | None = None, show_axes: bool | None = False
-    ) -> Figure:
-        """Plot a sample from the dataset.
-
-        Args:
-            sample (dict[str, Tensor]): a sample returned by :meth:`__getitem__`
-            suptitle (str|None): optional string to use as a suptitle
-            show_axes (bool|None): whether to show axes or not
-
-        Returns:
-            a matplotlib Figure with the rendered sample
-
-        .. versionadded:: 0.2
-        """
-
-        image = sample["image"]
-        if isinstance(image, dict):
-            image = image[self.rgb_modality]
-        if isinstance(image, torch.Tensor):
-            image = image.numpy()
-        image = image.take(self.rgb_indices, axis=0)
-        image = np.transpose(image, (1, 2, 0))
-        image = (image - image.min(axis=(0, 1))) * (1 / image.max(axis=(0, 1)))
-        image = np.clip(image, 0, 1)
-
-        label_mask = sample["mask"]
-        if isinstance(label_mask, torch.Tensor):
-            label_mask = label_mask.numpy()
-
-        showing_predictions = "prediction" in sample
-        if showing_predictions:
-            prediction_mask = sample["prediction"]
-            if isinstance(prediction_mask, torch.Tensor):
-                prediction_mask = prediction_mask.numpy()
-
-        return self._plot_sample(
-            image,
-            label_mask,
-            prediction=prediction_mask if showing_predictions else None,
-            suptitle=suptitle,
-            show_axes=show_axes,
-        )
-
-    @staticmethod
-    def _plot_sample(image, label, prediction=None, suptitle=None, show_axes=False):
-        num_images = 4 if prediction is not None else 3
-        fig, ax = plt.subplots(1, num_images, figsize=(12, 10), layout="compressed")
-        axes_visibility = "on" if show_axes else "off"
-
-        norm = mpl.colors.Normalize(vmin=label.min(), vmax=label.max())
-        ax[0].axis(axes_visibility)
-        ax[0].title.set_text("Image")
-        ax[0].imshow(image)
-
-        ax[1].axis(axes_visibility)
-        ax[1].title.set_text("Ground Truth Mask")
-        ax[1].imshow(label, cmap="Greens", norm=norm)
-
-        ax[2].axis(axes_visibility)
-        ax[2].title.set_text("GT Mask on Image")
-        ax[2].imshow(image)
-        ax[2].imshow(label, cmap="Greens", alpha=0.3, norm=norm)
-        # ax[2].legend()
-
-        if prediction is not None:
-            ax[3].axis(axes_visibility)
-            ax[3].title.set_text("Predicted Mask")
-            ax[3].imshow(prediction, cmap="Greens", norm=norm)
-
-        if suptitle is not None:
-            plt.suptitle(suptitle)
-        return fig
-
 
 class GenericMultimodalScalarDataset(GenericMultimodalDataset):
     """GenericMultimodalClassificationDataset"""
@@ -909,7 +806,6 @@ class GenericMultimodalScalarDataset(GenericMultimodalDataset):
         label_grep: str | None = "*",
         split: Path | None = None,
         image_modalities: list[str] | None = None,
-        rgb_modality: str | None = None,
         rgb_indices: list[int] | None = None,
         allow_missing_modalities: bool = False,
         allow_substring_file_names: bool = False,
@@ -947,8 +843,8 @@ class GenericMultimodalScalarDataset(GenericMultimodalDataset):
             image_modalities(list[str], optional): List of pixel-level raster modalities. Defaults to data_root.keys().
                 The difference between all modalities and image_modalities are non-image modalities which are treated
                 differently during the transforms and are not modified but only converted into a tensor if possible.
-            rgb_modality (str, optional): Modality used for RGB plots. Defaults to first modality in data_root.keys().
-            rgb_indices (list[str], optional): Indices of RGB channels. Defaults to [0, 1, 2].
+            rgb_indices (dict[str, list[int]], optional): Indices of RGB channels for plotting with the format
+                {<modality>: [<band indices>]}. Defaults to {image_modalities[0]: [0, 1, 2]} if not provided.
             allow_missing_modalities (bool, optional): Allow missing modalities during data loading. Defaults to False.
             allow_substring_file_names (bool, optional): Allow substrings during sample identification by adding
                 image or label grep to the sample prefixes. If False, treats sample prefixes as full file names.
@@ -992,7 +888,6 @@ class GenericMultimodalScalarDataset(GenericMultimodalDataset):
             label_grep=label_grep,
             split=split,
             image_modalities=image_modalities,
-            rgb_modality=rgb_modality,
             rgb_indices=rgb_indices,
             allow_missing_modalities=allow_missing_modalities,
             allow_substring_file_names=allow_substring_file_names,
@@ -1017,80 +912,3 @@ class GenericMultimodalScalarDataset(GenericMultimodalDataset):
     def __getitem__(self, index: int) -> dict[str, Any]:
         item = super().__getitem__(index)
         return item
-
-    def plot(
-        self, sample: dict[str, torch.Tensor], suptitle: str | None = None, show_axes: bool | None = False
-    ) -> Figure:
-        """Plot a sample from the dataset.
-
-        Args:
-            sample (dict[str, Tensor]): a sample returned by :meth:`__getitem__`
-            suptitle (str|None): optional string to use as a suptitle
-            show_axes (bool|None): whether to show axes or not
-
-        Returns:
-            a matplotlib Figure with the rendered sample
-
-        .. versionadded:: 0.2
-        """
-
-        # TODO: Check plotting code for classification tasks and add it to generic classification dataset as well
-        raise NotImplementedError
-
-        image = sample["image"]
-        if isinstance(image, dict):
-            image = image[self.rgb_modality]
-        if isinstance(image, torch.Tensor):
-            image = image.numpy()
-        image = image.take(self.rgb_indices, axis=0)
-        image = np.transpose(image, (1, 2, 0))
-        image = (image - image.min(axis=(0, 1))) * (1 / image.max(axis=(0, 1)))
-        image = np.clip(image, 0, 1)
-
-        label_mask = sample["mask"]
-        if isinstance(label_mask, torch.Tensor):
-            label_mask = label_mask.numpy()
-
-        showing_predictions = "prediction" in sample
-        if showing_predictions:
-            prediction_mask = sample["prediction"]
-            if isinstance(prediction_mask, torch.Tensor):
-                prediction_mask = prediction_mask.numpy()
-
-        return self._plot_sample(
-            image,
-            label_mask,
-            prediction=prediction_mask if showing_predictions else None,
-            suptitle=suptitle,
-            show_axes=show_axes,
-        )
-
-    @staticmethod
-    def _plot_sample(image, label, prediction=None, suptitle=None, show_axes=False):
-        num_images = 4 if prediction is not None else 3
-        fig, ax = plt.subplots(1, num_images, figsize=(12, 10), layout="compressed")
-        axes_visibility = "on" if show_axes else "off"
-
-        norm = mpl.colors.Normalize(vmin=label.min(), vmax=label.max())
-        ax[0].axis(axes_visibility)
-        ax[0].title.set_text("Image")
-        ax[0].imshow(image)
-
-        ax[1].axis(axes_visibility)
-        ax[1].title.set_text("Ground Truth Mask")
-        ax[1].imshow(label, cmap="Greens", norm=norm)
-
-        ax[2].axis(axes_visibility)
-        ax[2].title.set_text("GT Mask on Image")
-        ax[2].imshow(image)
-        ax[2].imshow(label, cmap="Greens", alpha=0.3, norm=norm)
-        # ax[2].legend()
-
-        if prediction is not None:
-            ax[3].axis(axes_visibility)
-            ax[3].title.set_text("Predicted Mask")
-            ax[3].imshow(prediction, cmap="Greens", norm=norm)
-
-        if suptitle is not None:
-            plt.suptitle(suptitle)
-        return fig
