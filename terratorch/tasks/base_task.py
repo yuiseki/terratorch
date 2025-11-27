@@ -5,6 +5,7 @@ import numpy as np
 import torch 
 import pandas as pd
 import lightning
+import matplotlib.pyplot as plt
 from lightning.pytorch.callbacks import Callback
 from torchgeo.trainers import BaseTask
 from torchgeo.datasets.utils import unbind_samples

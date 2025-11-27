@@ -288,8 +288,8 @@ class GenericMultiModalDataModule(NonGeoDataModule):
                 The difference between all modalities and image_modalities are non-image modalities which are treated
                 differently during the transforms and are not modified but only converted into a tensor if possible.
             rgb_modality (str, optional): rgb_modality is deprecated, provide modalities as keys in rgb_indices.
-            rgb_indices (list[int] | dict[str, list[int]], optional): Indices of RGB channels for plotting. Provide the
-                indices as a dict with the modalities as keys and three int indices as values. Defaults to None.
+            rgb_indices (dict[str, list[int]], optional): Indices of RGB channels for plotting with the format
+                {<modality>: [<band indices>]}. Defaults to {image_modalities[0]: [0, 1, 2]} if not provided.
             allow_substring_file_names (bool, optional): Allow substrings during sample identification by adding
                 image or label grep to the sample prefixes. If False, treats sample prefixes as full file names.
                 If True and no split file is provided, considers the file stem as prefix, otherwise the full file name.
@@ -471,15 +471,15 @@ class GenericMultiModalDataModule(NonGeoDataModule):
             # Backwards compatibility
             warnings.warn("`rgb_indices` was updated and expects now the format {'<modality>': [<band indices>]}. "
                           "Assuming first modality for backwards compatibility.")
-            rgb_indices = {modalities[0]: rgb_indices}
+            rgb_indices = {self.image_modalities[0]: rgb_indices}
 
-        for mod, indices in rgb_indices.items():
+        self.rgb_indices = rgb_indices or {self.image_modalities[0]: [0, 1, 2]}
+        for mod, indices in self.rgb_indices.items():
             # Check for RGB bands
             if len(indices) not in [1, 3]:
                 raise ValueError(f"`rgb_indices` must have 1 or 3 elements, got {len(indices)} elements for "
                                  f"{{'{mod}' : {indices}}}.")
 
-        self.rgb_indices = rgb_indices
         self.expand_temporal_dimension = expand_temporal_dimension
         self.reduce_zero_label = reduce_zero_label
         self.channel_position = channel_position
