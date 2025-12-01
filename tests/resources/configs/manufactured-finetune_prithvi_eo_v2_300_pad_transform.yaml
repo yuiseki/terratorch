@@ -30,14 +30,14 @@ data:
     batch_size: 2
     num_workers: 4
     train_transform:
-      - class_path: ToTensorV2
+      - class_path: albumentations.pytorch.transforms.ToTensorV2
       - class_path: terratorch.datasets.transforms.Padding
         init_args:
           input_shape:
             - 224
             - 224
     val_transform:
-      - class_path: ToTensorV2
+      - class_path: albumentations.pytorch.transforms.ToTensorV2
       - class_path: terratorch.datasets.transforms.Padding
         init_args:
           input_shape:

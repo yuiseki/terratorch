@@ -41,7 +41,7 @@ data:
           value: 0
           # mask_value: 1
           p: 0.5
-      - class_path: ToTensorV2
+      - class_path: albumentations.pytorch.transforms.ToTensorV2
     dataset_bands:
       - COASTAL_AEROSOL
       - BLUE

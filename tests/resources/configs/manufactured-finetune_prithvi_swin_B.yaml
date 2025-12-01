@@ -32,7 +32,7 @@ data:
     batch_size: 2
     num_workers: 4
     train_transform:
-      - class_path: ToTensorV2
+      - class_path: albumentations.pytorch.transforms.ToTensorV2
     dataset_bands:
       - 0
       - BLUE
