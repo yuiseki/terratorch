@@ -59,7 +59,7 @@ class WeightedMultivariateLossWrapper(nn.Module):
     
     def forward(self, output: Tensor, target: Tensor,) -> Tensor:
         loss = self.loss_function(output, target)
-        weights = self.weights.view(1, -1, * ([1] * (loss.ndim - 2))) # [1, num_vars, 1, 1] for pixel-wise (TODO: Pixel-wise multivariate)
+        weights = self.weights.view(1, -1, * ([1] * (loss.ndim - 2))) # [1, num_vars, 1, 1] for pixel-wise
                 
         weighted_loss = weights * loss
         
@@ -67,7 +67,7 @@ class WeightedMultivariateLossWrapper(nn.Module):
             return weighted_loss # [B, num_vars, H, W] or [B, num_vars]
         
         if self.reduction == "mean": 
-            return weighted_loss.sum() / weights.sum()  # weighted scalar mean for backprop
+            return weighted_loss.sum() / weights.expand_as(loss).sum()  # weighted scalar mean for backprop
         
         msg = "Only 'mean' and None reduction supported"
         raise Exception(msg)
