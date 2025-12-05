@@ -60,36 +60,36 @@ class SemanticSegmentationTask(TerraTorchTask):
             - Allows to evaluate on multiple test dataloaders
         """
 
-        def __init__(
-            self,
-            model_args: dict | None = None,
-            model_factory: str | None = None,
-            model: Any = None,   # avoid torch.nn.Module in signature
-            loss: str | list[str] | dict[str, float] | None = "ce",
-            aux_heads: list[Any] | None = None,
-            aux_loss: dict[str, float] | None = None,
-            class_weights: list[float] | None = None,
-            ignore_index: int | None = None,
-            lr: float = 0.001,
-            optimizer: str | None = None,
-            optimizer_hparams: dict | None = None,
-            scheduler: str | None = None,
-            scheduler_hparams: dict | None = None,
-            freeze_backbone: bool = False,
-            freeze_decoder: bool = False,
-            freeze_head: bool = False,
-            plot_on_val: bool | int = 10,
-            class_names: list[str] | None = None,
-            tiled_inference_parameters: dict | None = None,
-            test_dataloaders_names: list[str] | None = None,
-            lr_overrides: dict[str, float] | None = None,
-            output_on_inference: str | list[str] = "prediction",
-            output_most_probable: bool = True,
-            path_to_record_metrics: str | None = None,
-            tiled_inference_on_testing: bool = False,
-            tiled_inference_on_validation: bool = False,
-        ) -> None:
-            """Constructor
+    def __init__(
+        self,
+        model_args: dict | None = None,
+        model_factory: str | None = None,
+        model: Any = None,   # avoid torch.nn.Module in signature
+        loss: str | list[str] | dict[str, float] | None = "ce",
+        aux_heads: list[Any] | None = None,
+        aux_loss: dict[str, float] | None = None,
+        class_weights: list[float] | None = None,
+        ignore_index: int | None = None,
+        lr: float = 0.001,
+        optimizer: str | None = None,
+        optimizer_hparams: dict | None = None,
+        scheduler: str | None = None,
+        scheduler_hparams: dict | None = None,
+        freeze_backbone: bool = False,
+        freeze_decoder: bool = False,
+        freeze_head: bool = False,
+        plot_on_val: bool | int = 10,
+        class_names: list[str] | None = None,
+        tiled_inference_parameters: dict | None = None,
+        test_dataloaders_names: list[str] | None = None,
+        lr_overrides: dict[str, float] | None = None,
+        output_on_inference: str | list[str] = "prediction",
+        output_most_probable: bool = True,
+        path_to_record_metrics: str | None = None,
+        tiled_inference_on_testing: bool = False,
+        tiled_inference_on_validation: bool = False,
+    ) -> None:
+        """Constructor
 
         Args:
             model_args (Dict): Arguments passed to the model factory.
