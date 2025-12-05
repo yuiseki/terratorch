@@ -49,16 +49,16 @@ def init_loss(loss: str, ignore_index: int = None, class_weights: list = None) -
 
 
 class SemanticSegmentationTask(TerraTorchTask):
-        """Semantic Segmentation Task that accepts models from a range of sources.
+    """Semantic Segmentation Task that accepts models from a range of sources.
 
-        This class is analog in functionality to class SemanticSegmentationTask defined by torchgeo.
-        However, it has some important differences:
-            - Accepts the specification of a model factory
-            - Logs metrics per class
-            - Does not have any callbacks by default (TorchGeo tasks do early stopping by default)
-            - Allows the setting of optimizers in the constructor
-            - Allows to evaluate on multiple test dataloaders
-        """
+    This class is analog in functionality to class SemanticSegmentationTask defined by torchgeo.
+    However, it has some important differences:
+        - Accepts the specification of a model factory
+        - Logs metrics per class
+        - Does not have any callbacks by default (TorchGeo tasks do early stopping by default)
+        - Allows the setting of optimizers in the constructor
+        - Allows to evaluate on multiple test dataloaders
+    """
 
     def __init__(
         self,
