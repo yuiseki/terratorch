@@ -1,9 +1,5 @@
-################################################################
-# Licensed Materials - Property of IBM
-# "Restricted Materials of IBM"
-# Copyright IBM Corp. 2025 ALL RIGHTS RESERVED
-################################################################
-
+# Copyright contributors to the Terratorch project
+# SPDX-License-Identifier: Apache-2.0
 
 # lightning.pytorch==2.1.1
 seed_everything: 0
