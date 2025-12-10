@@ -147,6 +147,7 @@ optimizer:
     weight_decay: 0.05
     # ---- Optimizer stop if ----
 lr_scheduler:
-  class_path: torch.optim.lr_scheduler.ReduceLROnPlateau
+  class_path: lightning.pytorch.cli.ReduceLROnPlateau
   init_args:
     monitor: val/loss
+

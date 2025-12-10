@@ -29,6 +29,12 @@ TEST_MODELS_ROOT = os.getenv(
 TMP_ROOT = os.getenv("TERRATORCH_TMP_ROOT", "/dccstor/terratorch/tmp")
 TEST_CHECKPOINTS_ROOT = os.getenv("TERRATORCH_TEST_CHECKPOINTS_ROOT", TEST_MODELS_ROOT)
 
+def free_gpu():
+    try:
+        subprocess.run(["nvidia-smi", "--gpu-reset", "-i", "0"], check=True)
+    except Exception as e:
+        print("GPU reset failed:", e)
+
 
 @pytest.mark.parametrize(
     "model_name",
@@ -58,6 +64,9 @@ def test_models_fit(model_name):
         text=True,
         check=False,
     )
+    torch.cuda.empty_cache()
+    free_gpu()
+
 
     # Print the captured output
     print("STDOUT:", result.stdout)
