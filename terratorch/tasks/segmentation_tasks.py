@@ -122,8 +122,8 @@ class SemanticSegmentationTask(TerraTorchTask):
             freeze_backbone (bool, optional): Whether to freeze the backbone. Defaults to False.
             freeze_decoder (bool, optional): Whether to freeze the decoder. Defaults to False.
             freeze_head (bool, optional): Whether to freeze the segmentation head. Defaults to False.
-            plot_on_val (bool | int, optional): Whether to plot visualizations on validation.
-            If true, log every epoch. Defaults to 10. If int, will plot every plot_on_val epochs.
+            plot_on_val (bool | int, optional): Whether to plot visualizations on validation and in test.
+                If true, log every epoch. Defaults to 10. If int, will plot every plot_on_val epochs.
             class_names (list[str] | None, optional): List of class names passed to metrics for better naming.
                 Defaults to numeric ordering.
             tiled_inference_parameters (dict | None, optional): Inference parameters
@@ -160,6 +160,7 @@ class SemanticSegmentationTask(TerraTorchTask):
             tiled_inference_on_testing=tiled_inference_on_testing,
             tiled_inference_on_validation=tiled_inference_on_validation,
             path_to_record_metrics=path_to_record_metrics,
+            plot_on_val=plot_on_val,
         )
 
         if model is not None:
@@ -172,7 +173,6 @@ class SemanticSegmentationTask(TerraTorchTask):
             self.test_loss_handler.append(LossHandler(metrics.prefix))
         self.val_loss_handler = LossHandler(self.val_metrics.prefix)
         self.monitor = f"{self.val_metrics.prefix}loss"
-        self.plot_on_val = int(plot_on_val)
         self.output_on_inference = output_on_inference
 
         # When the user decides to use `output_most_probable` as `False` in
@@ -372,6 +372,10 @@ class SemanticSegmentationTask(TerraTorchTask):
 
         self.record_metrics(dataloader_idx, y_hat_hard, y)
 
+        if self._do_plot_samples(batch_idx):
+            batch["prediction"] = y_hat_hard
+            self.plot_sample(batch, batch_idx)
+
     def validation_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> None:
         """Compute the validation loss and additional metrics.
         Args:
@@ -392,32 +396,8 @@ class SemanticSegmentationTask(TerraTorchTask):
         self.val_metrics.update(y_hat_hard, y)
 
         if self._do_plot_samples(batch_idx):
-            try:
-                datamodule = self.trainer.datamodule
-                batch["prediction"] = y_hat_hard
-
-                if isinstance(batch["image"], dict):
-                    rgb_modality = getattr(datamodule, "rgb_modality", None) or list(batch["image"].keys())[0]
-                    batch["image"] = batch["image"][rgb_modality]
-
-                for key in ["image", "mask", "prediction"]:
-                    batch[key] = batch[key].cpu()
-                sample = unbind_samples(batch)[0]
-                fig = datamodule.val_dataset.plot(sample) if hasattr(datamodule.val_dataset, "plot") else datamodule.plot(sample, "val") 
-                if fig:
-                    summary_writer = self.logger.experiment
-                    if hasattr(summary_writer, "add_figure"):
-                        summary_writer.add_figure(f"image/{batch_idx}", fig, global_step=self.global_step)
-                    elif hasattr(summary_writer, "log_figure"):
-                        summary_writer.log_figure(
-                            self.logger.run_id, fig, f"epoch_{self.current_epoch}_{batch_idx}.png"
-                        )
-                    else:
-                        plt.savefig("/mnt/geobench/data/geobench_experiments/final_again/test_plots")
-            except ValueError:
-                pass
-            finally:
-                plt.close()
+            batch["prediction"] = y_hat_hard
+            self.plot_sample(batch, batch_idx)
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Tensor:
         """Compute the predicted class probabilities.
