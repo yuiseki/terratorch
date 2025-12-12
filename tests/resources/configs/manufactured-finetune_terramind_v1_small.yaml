@@ -66,8 +66,11 @@ data:
       - 2
       - 1
       - 0
-    data_root: tests/resources/inputs
-    label_data_root: tests/resources/inputs
+    data_root:
+      S2L2A: tests/resources/inputs
+    label_data_root:
+      S2L2A: tests/resources/inputs
+
     image_grep:
       S2L2A: "*input.tif"
     label_grep: "*label_seg.tif"
