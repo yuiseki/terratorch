@@ -19,6 +19,7 @@ class IdentityBackbone(nn.Module):
         """
         super().__init__()
         self.out_channels = out_channels
+        self.patch_size = None
 
     def forward(self, x: torch.Tensor, **kwargs) -> list[torch.Tensor]:
         """

@@ -104,6 +104,7 @@ class EncoderDecoderFactory(ModelFactory):
         necks: list[dict] | None = None,
         aux_decoders: list[AuxiliaryHead] | None = None,
         rescale: bool = True,  # noqa: FBT002, FBT001,
+        image_size_out: tuple[int, int] | None = None,
         peft_config: dict | None = None,
         **kwargs,
     ) -> Model:
@@ -137,6 +138,9 @@ class EncoderDecoderFactory(ModelFactory):
             rescale (bool): Whether to apply bilinear interpolation to rescale the model output if its size
                 is different from the ground truth. Only applicable to pixel wise models
                 (e.g. segmentation, pixel wise regression). Defaults to True.
+            image_size_out (tuple[int, int] | None): The desired (Height, Width) size of the output image or mask for pixelwise tasks (e.g. segmentation, pixel wise regression).
+                This is used to ensure the model produces the correct output shape. If set to **None** (default), the size is dynamically determined: either
+                set by the 'image_size' property during the forward pass, or inferred directly from the size of the input image.
             peft_config (dict): Configuration options for using [PEFT](https://huggingface.co/docs/peft/index).
                 The dictionary should have the following keys:
 
@@ -219,6 +223,7 @@ class EncoderDecoderFactory(ModelFactory):
                 necks=neck_list,
                 decoder_includes_head=decoder_includes_head,
                 rescale=rescale,
+                image_size_out=image_size_out
             )
 
         to_be_aux_decoders: list[AuxiliaryHeadWithDecoderWithoutInstantiatedHead] = []
@@ -246,6 +251,7 @@ class EncoderDecoderFactory(ModelFactory):
             necks=neck_list,
             decoder_includes_head=decoder_includes_head,
             rescale=rescale,
+            image_size_out=image_size_out,
             auxiliary_heads=to_be_aux_decoders,
         )
 
@@ -260,6 +266,7 @@ def _build_appropriate_model(
     decoder_includes_head: bool = False,
     necks: list[Neck] | None = None,
     rescale: bool = True,  # noqa: FBT001, FBT002
+    image_size_out: tuple[int, int] | None = None,
     auxiliary_heads: list[AuxiliaryHeadWithDecoderWithoutInstantiatedHead] | None = None,
 ):
     if necks:
@@ -277,6 +284,7 @@ def _build_appropriate_model(
             decoder_includes_head=decoder_includes_head,
             neck=neck_module,
             rescale=rescale,
+            image_size_out=image_size_out,
             auxiliary_heads=auxiliary_heads,
         )
     elif task in SCALAR_TASKS:
