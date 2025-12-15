@@ -106,7 +106,7 @@ model:
   init_args:
     model_args: 
       backbone: timm_resnet18 # timm_resnet34 , timm_resnet18 , timm_resnet50 , timm_resnet101 , timm_resnet152
-      backbone_pretrained: true 
+      backbone_pretrained: false 
       num_classes: 3
       backbone_in_chans: 6 # To be used with RGB when pretrained, can be more if not retrained
       necks: 
