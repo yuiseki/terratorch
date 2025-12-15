@@ -5,7 +5,6 @@ This module contains generic data modules for instantiation at runtime.
 """
 
 import logging
-from typing import Any, List, Optional
 import warnings
 from collections.abc import Callable, Iterable
 from pathlib import Path
@@ -108,9 +107,11 @@ class MultimodalNormalize(Callable):
                 # C, H, W
                 means = torch.tensor(self.means[m], device=image.device).view(-1, 1, 1)
                 stds = torch.tensor(self.stds[m], device=image.device).view(-1, 1, 1)
+
             elif len(image.shape) == 2:
                 means = torch.tensor(self.means[m], device=image.device)
                 stds = torch.tensor(self.stds[m], device=image.device)
+
             elif len(image.shape) == 1:
                 means = torch.tensor(self.means[m], device=image.device)
                 stds = torch.tensor(self.stds[m], device=image.device)
@@ -215,10 +216,10 @@ class GenericMultiModalDataModule(NonGeoDataModule):
         allow_substring_file_names: bool = True,
         skip_file_checks: bool = False,
         class_names: list[str] | None = None,
-        constant_scale: dict[str, float] = None,
-        train_transform: Optional[List[Any]] = None,
-        val_transform: Optional[List[Any]] = None,
-        test_transform: Optional[List[Any]] = None,
+        constant_scale: dict[str, float] | None = None,
+        train_transform: dict | A.Compose | None | list = None,
+        val_transform: dict | A.Compose | None | list = None,
+        test_transform: dict | A.Compose | None | list = None,
         shared_transforms: list | bool = True,
         expand_temporal_dimension: bool = False,
         no_data_replace: float | None = None,
