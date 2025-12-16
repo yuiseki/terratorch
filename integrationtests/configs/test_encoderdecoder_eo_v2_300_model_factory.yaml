@@ -21,7 +21,7 @@ trainer:
         patience: 20
     - class_path: lightning.pytorch.callbacks.ModelCheckpoint
       init_args:
-        dirpath: /tmp/
+        dirpath: /dccstor/terratorch/tmp/eo_v2_300/
         mode: min
         monitor: val/loss
         filename: best-state_dict-{epoch:02d}
