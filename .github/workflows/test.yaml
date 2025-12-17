@@ -49,6 +49,7 @@ jobs:
           pip install pip==25.3
           pip --version
           pip install -e .
+          pip cache purge
           pip install -e .[test,wxc,surya]
       - name: List pip dependencies
         run: pip list
