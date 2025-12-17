@@ -16,6 +16,7 @@ from terratorch.models.necks import Neck, build_neck_list, NeckSequential
 from terratorch.models.peft_utils import get_peft_backbone
 from terratorch.models.pixel_wise_model import PixelWiseModel
 from terratorch.models.scalar_output_model import ScalarOutputModel
+from terratorch.models.embedding_output_model import EmbeddingOutputModel
 from terratorch.models.utils import extract_prefix_keys, TemporalWrapper
 from terratorch.registry import BACKBONE_REGISTRY, DECODER_REGISTRY, MODEL_FACTORY_REGISTRY
 
@@ -24,7 +25,9 @@ from .utils import _get_backbone
 
 PIXEL_WISE_TASKS = ["segmentation", "regression"]
 SCALAR_TASKS = ["classification", "scalar_regression"]
-SUPPORTED_TASKS = PIXEL_WISE_TASKS + SCALAR_TASKS
+EMBEDDING_GENERATION = ["embedding_generation"]
+
+SUPPORTED_TASKS = PIXEL_WISE_TASKS + SCALAR_TASKS + EMBEDDING_GENERATION
 
 
 def _get_decoder_and_head_kwargs(
@@ -95,7 +98,7 @@ class EncoderDecoderFactory(ModelFactory):
         self,
         task: str,
         backbone: str | nn.Module,
-        decoder: str | nn.Module,
+        decoder: str | nn.Module | None = None,
         backbone_kwargs: dict | None = None,
         decoder_kwargs: dict | None = None,
         head_kwargs: dict | None = None,
@@ -123,7 +126,7 @@ class EncoderDecoderFactory(ModelFactory):
                     registries supported (internal terratorch registry, smp, ...).
                     If an nn.Module, we expect it to expose a property `decoder.out_channels`.
                     Pixel wise tasks will be concatenated with a Conv2d for the final convolution.
-                    Defaults to "FCNDecoder".
+                    Defaults to "FCNDecoder". Defaults to 'None' for embedding generation tasks.
             backbone_kwargs (dict, optional) : Arguments to be passed to instantiate the backbone.
             decoder_kwargs (dict, optional) : Arguments to be passed to instantiate the decoder.
             head_kwargs (dict, optional) : Arguments to be passed to the head network. 
@@ -201,18 +204,47 @@ class EncoderDecoderFactory(ModelFactory):
         # for these, we pass the num_outputs to them
         # others dont include a head
         # for those, we dont pass num_outputs
-        if not decoder_kwargs:
-            decoder_kwargs, kwargs = extract_prefix_keys(kwargs, "decoder_")
+        if decoder:
+            if not decoder_kwargs:
+                decoder_kwargs, kwargs = extract_prefix_keys(kwargs, "decoder_")
 
-        if not head_kwargs:
-            head_kwargs, kwargs = extract_prefix_keys(kwargs, "head_")
+            if not head_kwargs:
+                head_kwargs, kwargs = extract_prefix_keys(kwargs, "head_")
 
-        decoder, head_kwargs, decoder_includes_head = _get_decoder_and_head_kwargs(
-            decoder, channel_list, decoder_kwargs, head_kwargs, num_outputs=num_outputs, num_classes=num_classes
-        )
+            decoder, head_kwargs, decoder_includes_head = _get_decoder_and_head_kwargs(
+                decoder, channel_list, decoder_kwargs, head_kwargs, num_outputs=num_outputs, num_classes=num_classes
+            )
 
-        if aux_decoders is None:
+            if aux_decoders is None:
+                _check_all_args_used(kwargs)
+                return _build_appropriate_model(
+                    task,
+                    backbone,
+                    decoder,
+                    head_kwargs,
+                    patch_size=patch_size,
+                    padding=padding,
+                    necks=neck_list,
+                    decoder_includes_head=decoder_includes_head,
+                    rescale=rescale,
+                    image_size_out=image_size_out
+                )
+
+            to_be_aux_decoders: list[AuxiliaryHeadWithDecoderWithoutInstantiatedHead] = []
+            for aux_decoder in aux_decoders:
+                args = aux_decoder.decoder_args if aux_decoder.decoder_args else {}
+                aux_decoder_kwargs, args = extract_prefix_keys(args, "decoder_")
+                aux_head_kwargs, args = extract_prefix_keys(args, "head_")
+                aux_decoder_instance, aux_head_kwargs, aux_decoder_includes_head = _get_decoder_and_head_kwargs(
+                    aux_decoder.decoder, channel_list, aux_decoder_kwargs, aux_head_kwargs, num_outputs=num_outputs, num_classes=num_classes
+                )
+                to_be_aux_decoders.append(
+                    AuxiliaryHeadWithDecoderWithoutInstantiatedHead(aux_decoder.name, aux_decoder_instance, aux_head_kwargs)
+                )
+                _check_all_args_used(args)
+
             _check_all_args_used(kwargs)
+
             return _build_appropriate_model(
                 task,
                 backbone,
@@ -223,43 +255,28 @@ class EncoderDecoderFactory(ModelFactory):
                 necks=neck_list,
                 decoder_includes_head=decoder_includes_head,
                 rescale=rescale,
-                image_size_out=image_size_out
+                image_size_out=image_size_out,
+                auxiliary_heads=to_be_aux_decoders,
             )
+        else:
+            if task not in EMBEDDING_GENERATION and decoder is None:
+                raise ValueError(f"A decoder must be provided for task '{task}'.")
 
-        to_be_aux_decoders: list[AuxiliaryHeadWithDecoderWithoutInstantiatedHead] = []
-        for aux_decoder in aux_decoders:
-            args = aux_decoder.decoder_args if aux_decoder.decoder_args else {}
-            aux_decoder_kwargs, args = extract_prefix_keys(args, "decoder_")
-            aux_head_kwargs, args = extract_prefix_keys(args, "head_")
-            aux_decoder_instance, aux_head_kwargs, aux_decoder_includes_head = _get_decoder_and_head_kwargs(
-                aux_decoder.decoder, channel_list, aux_decoder_kwargs, aux_head_kwargs, num_outputs=num_outputs, num_classes=num_classes
+            return _build_appropriate_model(
+                task,
+                backbone,
+                decoder,
+                head_kwargs={},
+                patch_size=patch_size,
+                padding=padding,
+                necks=neck_list,
             )
-            to_be_aux_decoders.append(
-                AuxiliaryHeadWithDecoderWithoutInstantiatedHead(aux_decoder.name, aux_decoder_instance, aux_head_kwargs)
-            )
-            _check_all_args_used(args)
-
-        _check_all_args_used(kwargs)
-
-        return _build_appropriate_model(
-            task,
-            backbone,
-            decoder,
-            head_kwargs,
-            patch_size=patch_size,
-            padding=padding,
-            necks=neck_list,
-            decoder_includes_head=decoder_includes_head,
-            rescale=rescale,
-            image_size_out=image_size_out,
-            auxiliary_heads=to_be_aux_decoders,
-        )
 
 
 def _build_appropriate_model(
     task: str,
     backbone: nn.Module,
-    decoder: nn.Module,
+    decoder: nn.Module | None,
     head_kwargs: dict,
     patch_size: int | list | None,
     padding: str,
@@ -298,4 +315,12 @@ def _build_appropriate_model(
             decoder_includes_head=decoder_includes_head,
             neck=neck_module,
             auxiliary_heads=auxiliary_heads,
+        )
+
+    elif task in EMBEDDING_GENERATION:
+        return EmbeddingOutputModel(
+            backbone,
+            patch_size=patch_size,
+            padding=padding,
+            neck=neck_module,
         )

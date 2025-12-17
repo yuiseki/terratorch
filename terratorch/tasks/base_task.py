@@ -62,10 +62,10 @@ class TerraTorchTask(BaseTask):
                 raise ValueError(msg)
             self.model.freeze_encoder()
 
-        if self.hparams["freeze_decoder"]:
+        if self.hparams.get("freeze_decoder", None):
             self.model.freeze_decoder()
 
-        if self.hparams["freeze_head"]:
+        if self.hparams.get("freeze_head", None):
             self.model.freeze_head()
 
     def handle_full_or_tiled_inference(
