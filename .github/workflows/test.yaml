@@ -46,7 +46,7 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: |
-          pip install pip==24.2
+          pip install pip==25.1
           pip --version
           pip install -e .
           pip cache purge
