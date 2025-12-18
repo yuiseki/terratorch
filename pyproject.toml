@@ -88,7 +88,7 @@ test = [
   "pytest-coverage",
   "coverage-badge",
   "peft>=0.15.0",
-  "diffusers<=0.34.0",
+  "diffusers",
   "tokenizers",
   "dask",
   "wandb",
@@ -96,7 +96,10 @@ test = [
   "numba",
   "hdf5plugin",
   "h5netcdf",
-  "geobenchv2==0.9",
+  "geobenchv2>=0.9",
+  "terratorch-surya>=0.1.0",
+#  "PrithviWxC",  # Currently fails of pypi version conflics
+#  "granitewxc",  # Currently fails of pypi version conflics
 ]
 
 surya = [
