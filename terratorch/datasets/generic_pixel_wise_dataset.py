@@ -85,7 +85,9 @@ class GenericPixelWiseDataset(NonGeoDataset, ABC):
             no_data_replace (float | None): Replace nan values in input images with this value. If none, does no replacement. Defaults to None.
             no_label_replace (int | None): Replace nan values in label with this value. If none, does no replacement. Defaults to -1.
             embedding_input (bool): Whether the input represents embeddings rather than an image, used for plotting. Defaults to False.
-            pca_step (int): Spatial downsampling factor used when fitting PCA for embedding viusalizations. Defaults to 4 -> 1/4 of spatial embeddings used.
+            pca_step (int): Spatial subsampling factor for PCA fitting in embedding visualizations.
+                PCA components are estimated using only every pca_step-th spatial embedding
+                (e.g. pca_step=4 uses 1/4 of embeddings), then applied to all embeddings. Defaults to 4.
             expand_temporal_dimension (bool): Go from shape (time*channels, h, w) to (channels, time, h, w).
                 Defaults to False.
             reduce_zero_label (bool): Subtract 1 from all labels. Useful when labels start from 1 instead of the
@@ -186,7 +188,7 @@ class GenericPixelWiseDataset(NonGeoDataset, ABC):
         return output
 
     def _load_file(self, path, nan_replace: int | float | None = None) -> xr.DataArray:
-        warnings.filterwarnings("ignore", category=NotGeoreferencedWarning)
+        #warnings.filterwarnings("ignore", category=NotGeoreferencedWarning) #TODO Handle NotGeoreferencedWarning better
         data = rioxarray.open_rasterio(path, masked=True)
         if nan_replace is not None:
             data = data.fillna(nan_replace)
@@ -234,6 +236,11 @@ class GenericPixelWiseDataset(NonGeoDataset, ABC):
 
         if embedding_input:
             if image.ndim == 2:
+                warnings.warn(
+                    "Embedding plotting is only supported for spatially arranged embeddings. "
+                    "For example, in TerraTorch you can use a spatial output format such as TIFF, "
+                    "or add a ReshapeTokensToImage neck during Embedding Generation."
+                )
                 return  # Plotting requires (reshaped) spatial (C, H, W) input embeddings.
 
             image_for_plot, H_emb, W_emb = to_pca_rgb(image_chw =image, step=pca_step) # Get 3-channel PCA image

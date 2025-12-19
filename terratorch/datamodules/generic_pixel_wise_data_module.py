@@ -176,9 +176,9 @@ class GenericNonGeoSegmentationDataModule(NonGeoDataModule):
             no_data_replace (float | None): Replace nan values in input images with this value. If none, does no replacement. Defaults to None.
             no_label_replace (int | None): Replace nan values in label with this value. If none, does no replacement. Defaults to None.
             embedding_input (bool): Whether the input represents embeddings rather than an image, used for plotting. Defaults to False.
-            pca_step (int): Spatial downsampling factor used when fitting PCA for embedding viusalisations. Defaults to 4 -> 1/4 of spatial embeddings used.
-            expand_temporal_dimension (bool): Go from shape (time*channels, h, w) to (channels, time, h, w).
-                Defaults to False.
+            pca_step (int): Spatial subsampling factor for PCA fitting in embedding visualizations.
+                PCA components are estimated using only every pca_step-th spatial embedding
+                (e.g. pca_step=4 uses 1/4 of embeddings), then applied to all embeddings. Defaults to 4.
             reduce_zero_label (bool): Subtract 1 from all labels. Useful when labels start from 1 instead of the
                 expected 0. Defaults to False.
             drop_last (bool): Drop the last batch if it is not complete. Defaults to True.
@@ -457,7 +457,9 @@ class GenericNonGeoPixelwiseRegressionDataModule(NonGeoDataModule):
             no_data_replace (float | None): Replace nan values in input images with this value. If none, does no replacement. Defaults to None.
             no_label_replace (int | None): Replace nan values in label with this value. If none, does no replacement. Defaults to None.
             embedding_input (bool): Whether the input represents embeddings rather than an image, used for plotting. Defaults to False.
-            pca_step (int): Spatial downsampling factor used when fitting PCA for embedding viusalisations. Defaults to 4 -> 1/4 of spatial embeddings used.
+            pca_step (int): Spatial subsampling factor for PCA fitting in embedding visualizations.
+                PCA components are estimated using only every pca_step-th spatial embedding
+                (e.g. pca_step=4 uses 1/4 of embeddings), then applied to all embeddings. Defaults to 4.
             expand_temporal_dimension (bool): Go from shape (time*channels, h, w) to (channels, time, h, w).
                 Defaults to False.
             reduce_zero_label (bool): Subtract 1 from all labels. Useful when labels start from 1 instead of the

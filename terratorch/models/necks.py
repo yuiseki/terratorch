@@ -92,6 +92,9 @@ class AggregateTokens(Neck):
         self.latent_dim = [channel_list[i] for i in self.indices]
         self.drop_cls = drop_cls
 
+        if self.drop_cls and self.pooling == "cls":
+            raise ValueError("drop_cls=True is incompatible with pooling='cls'.")
+
     def forward(self, features: list[torch.Tensor], **kwargs) -> list[torch.Tensor]:
         aggregated_features = []
 
@@ -109,16 +112,16 @@ class AggregateTokens(Neck):
                 T = feat.shape[2]
                 feat = feat.reshape(B, -1, T, self.latent_dim[i])
 
+            if self.drop_cls:
+                feat = feat[..., 1:, :]
+
             if isinstance(self.pooling, int):
                 # Select token index
                 aggregated_features.append(feat[..., self.pooling, :])
             elif self.pooling == "cls":
                 # Assuming CLS token is on first position
                 aggregated_features.append(feat[..., 0, :])
-            elif self.drop_cls:
-                feat = feat[..., 1:, :] # Dropping cls token
-
-            if self.pooling == "mean":
+            elif self.pooling == "mean":
                 aggregated_features.append(feat.mean(dim=1))
             elif self.pooling == "max":
                 aggregated_features.append(feat.max(dim=1).values)

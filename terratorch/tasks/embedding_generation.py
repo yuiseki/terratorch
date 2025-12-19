@@ -67,37 +67,45 @@ class EmbeddingGenerationTask(TerraTorchTask):
         self.embedding_indices = layers
 
         model_args = model_args or {}
-        if embedding_pooling in (None, "None", "keep"):
-            model_args["necks"] = [
-                {
-                    "name": "SelectIndices",
-                    "indices": self.embedding_indices
-                }
-            ]
-            if output_format == "tiff":
-                model_args["necks"].append(
-                    {
-                        "name": "ReshapeTokensToImage",
-                        "remove_cls_token": self.has_cls
-                    }
-                )
-                logger.info(
-                    "GeoTIFF selected; 2D token embeddings (ViT) will be reshaped to "
-                    "[C, sqrt(num_tokens), sqrt(num_tokens)] after dropping CLS if present."
-                )
-        elif embedding_pooling in ["mean", "max", "min", "cls"]:
-            model_args["necks"] = [
-                {
-                    "name": "AggregateTokens",
-                    "pooling": embedding_pooling,
-                    "indices": self.embedding_indices,
-                    "drop_cls": has_cls
-                }
-            ]
-            if self.output_format == "tiff":
-                warnings.warn("GeoTIFF output not recommended with embedding pooling, saves 1D vectors as (C,1,1).")
+        if model_args.get("necks", None):
+            logger.info(
+                "EmbeddingGeneration is designed to automatically add necks based on the selected "
+                "output format and aggregation settings. Since necks were provided explicitly, "
+                "automatic neck insertion and embedding aggregation are skipped. "
+                "This may cause incompatibilities with the chosen output format."
+            )
         else:
-            raise ValueError(f"EmbeddingPooling {embedding_pooling} is not supported.")
+            if embedding_pooling in (None, "None", "keep"):
+                model_args["necks"] = [
+                    {
+                        "name": "SelectIndices",
+                        "indices": self.embedding_indices
+                    }
+                ]
+                if output_format == "tiff":
+                    model_args["necks"].append(
+                        {
+                            "name": "ReshapeTokensToImage",
+                            "remove_cls_token": self.has_cls
+                        }
+                    )
+                    logger.info(
+                        "GeoTIFF selected; 2D token embeddings (ViT) will be reshaped to "
+                        "[C, sqrt(num_tokens), sqrt(num_tokens)] after dropping CLS if present."
+                    )
+            elif embedding_pooling in ["mean", "max", "min", "cls"]:
+                model_args["necks"] = [
+                    {
+                        "name": "AggregateTokens",
+                        "pooling": embedding_pooling,
+                        "indices": self.embedding_indices,
+                        "drop_cls": has_cls
+                    }
+                ]
+                if self.output_format == "tiff":
+                    warnings.warn("GeoTIFF output not recommended with embedding pooling, saves 1D vectors as (C,1,1).")
+            else:
+                raise ValueError(f"EmbeddingPooling {embedding_pooling} is not supported.")
 
         self.model_args = model_args
         self.aux_heads = []

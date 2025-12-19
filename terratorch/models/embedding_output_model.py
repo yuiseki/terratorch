@@ -44,10 +44,14 @@ class EmbeddingOutputModel(Model, SegmentationModel):
 
         self.patch_size = patch_size
         self.padding = padding
-        self.encoder.eval()
+        self.freeze_encoder()
 
     def freeze_encoder(self):
-        return []
+        if hasattr(self.encoder, "freeze"):
+            self.encoder.freeze()
+        else:
+            for param in self.encoder.parameters():
+                param.requires_grad_(False)
 
     def freeze_decoder(self):
         return []
